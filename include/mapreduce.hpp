@@ -18,18 +18,24 @@
 #include <algorithm>
 
 namespace mapreduce {
-    // FIXME: We can not be using shared global state in a concurrent program
-    std::vector<std::pair<std::string, std::string>> intermediate;
-    static std::ofstream output_file;
+    class MapReduce {
+    public:
+        std::vector<std::pair<std::string, std::string>> intermediate;
+        std::unordered_map<std::string, std::string> intermediate_final;
+
+        // Synchronization primitives
+        std::mutex intermediate_mutex;
+        std::mutex intermediate_final_mutex;
+    };
 
     class Mapper {
     public:
-        virtual void map(const std::string&) = 0;
+        virtual void map(mapreduce::MapReduce& mr, const std::string&) = 0;
     };
 
     class Reducer {
     public:
-        virtual void reduce(const std::string& key, std::vector<std::string> intermediate_values) = 0;
+        virtual void reduce(mapreduce::MapReduce& mr, const std::string& key, std::vector<std::string> intermediate_values) = 0;
     };
 
     struct MapReduceSpecification {
@@ -46,6 +52,8 @@ namespace mapreduce {
 
     void execute(const MapReduceSpecification& spec) {
         std::cout << "executing mapreduce job" << std::endl;
+
+        MapReduce mr;
 
         // Read input files, and split each of them into segments of at most 16MB
         std::vector<std::string> segments; // Each segment is at most 16MB
@@ -81,30 +89,27 @@ namespace mapreduce {
         }
         std::cout << std::endl;
 
-        // Open the output file
-        output_file.open(spec.output_filename);
-
         // Start map tasks
         for (const auto& segment : segments)
-            spec.mapper->map(segment);
+            spec.mapper->map(mr, segment);
 
         // Sort the intermediate key-value pairs by key
         // FIXME: If the size of the intermediate data is too large, then we should use an external sort
-        std::sort(intermediate.begin(), intermediate.end(), [](const auto& a, const auto& b) {
+        std::sort(mr.intermediate.begin(), mr.intermediate.end(), [](const auto& a, const auto& b) {
             return a.first < b.first;
         });
 
-        if (intermediate.empty()) {
+        if (mr.intermediate.empty()) {
             std::cout << "no intermediate data to reduce" << std::endl;
             return;
         }
 
         // Collect all values for each key and send them to the reducer
-        std::string curr_key = intermediate[0].first;
+        std::string curr_key = mr.intermediate[0].first;
         std::vector<std::string> curr_intermediate_values;
-        for (const auto& [key, value] : intermediate) {
+        for (const auto& [key, value] : mr.intermediate) {
             if (key != curr_key) {
-                spec.reducer->reduce(curr_key, curr_intermediate_values);
+                spec.reducer->reduce(mr, curr_key, curr_intermediate_values);
                 curr_intermediate_values.clear();
                 curr_key = key;
             }
@@ -113,19 +118,28 @@ namespace mapreduce {
         }
 
         if (!curr_intermediate_values.empty())
-            spec.reducer->reduce(curr_key, curr_intermediate_values);
+            spec.reducer->reduce(mr, curr_key, curr_intermediate_values);
 
+
+        // Write the results to the output file
+        std::ofstream output_file;
+        output_file.open(spec.output_filename);
         output_file.close();
+        std::string output;
+        for (const auto& [key, value] : mr.intermediate_final) {
+            output += key + " " + value + "\n";
+        }
+        output_file << output;
+
         std::cout << "mapreduce job complete" << std::endl;
     }
 
-    void emit_intermediate(const std::string& key, const std::string& value) {
-        intermediate.emplace_back(key, value);
+    void emit_intermediate(MapReduce& mr, const std::string& key, const std::string& value) {
+        mr.intermediate.emplace_back(key, value);
     }
 
-    void emit(const std::string& key, const std::string& value) {
-        // Write the key-value pair to the output file
-        output_file << key << " " << value << std::endl;
+    void emit(MapReduce& mr, const std::string& key, const std::string& value) {
+        mr.intermediate_final[key] = value;
     }
 }
 

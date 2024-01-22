@@ -9,7 +9,7 @@
 #include <string>
 
 class WordCountMapper : public mapreduce::Mapper {
-    void map(const std::string& input) override {
+    void map(mapreduce::MapReduce& mr, const std::string& input) override {
         const auto& n = input.size();
         std::string word;
         for (size_t i = 0; i < n; ++i) {
@@ -22,18 +22,18 @@ class WordCountMapper : public mapreduce::Mapper {
                 i++;
 
             if (start < i)
-                mapreduce::emit_intermediate(input.substr(start, i - start), "1");
+                mapreduce::emit_intermediate(mr, input.substr(start, i - start), "1");
         }
     }
 };
 
 class WordCountReducer : public mapreduce::Reducer {
-    void reduce(const std::string& key, const std::vector<std::string> intermediate_values) override {
+    void reduce(mapreduce::MapReduce& mr, const std::string& key, const std::vector<std::string> intermediate_values) override {
         int value = 0;
         for (const auto& intermediate_value : intermediate_values) {
             value += std::stoi(intermediate_value);
         }
-        mapreduce::emit(key, std::to_string(value));
+        mapreduce::emit(mr, key, std::to_string(value));
     }
 };
 
