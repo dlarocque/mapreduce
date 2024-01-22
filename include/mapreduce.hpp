@@ -14,10 +14,12 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
+#include <filesystem>
+#include <algorithm>
 
 namespace mapreduce {
     // FIXME: We can not be using shared global state in a concurrent program
-    static std::unordered_map<std::string, unsigned> intermediate;
+    std::vector<std::pair<std::string, std::string>> intermediate;
     static std::ofstream output_file;
 
     class Mapper {
@@ -27,7 +29,7 @@ namespace mapreduce {
 
     class Reducer {
     public:
-        virtual void reduce(const std::unordered_map<std::string, unsigned>&) = 0;
+        virtual void reduce(const std::string& key, std::vector<std::string> intermediate_values) = 0;
     };
 
     struct MapReduceSpecification {
@@ -86,21 +88,42 @@ namespace mapreduce {
         for (const auto& segment : segments)
             spec.mapper->map(segment);
 
-        // Start reduce tasks
-        spec.reducer->reduce(intermediate);
+        // Sort the intermediate key-value pairs by key
+        // FIXME: If the size of the intermediate data is too large, then we should use an external sort
+        std::sort(intermediate.begin(), intermediate.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+
+        if (intermediate.empty()) {
+            std::cout << "no intermediate data to reduce" << std::endl;
+            return;
+        }
+
+        // Collect all values for each key and send them to the reducer
+        std::string curr_key = intermediate[0].first;
+        std::vector<std::string> curr_intermediate_values;
+        for (const auto& [key, value] : intermediate) {
+            if (key != curr_key) {
+                spec.reducer->reduce(curr_key, curr_intermediate_values);
+                curr_intermediate_values.clear();
+                curr_key = key;
+            }
+
+            curr_intermediate_values.push_back(value);
+        }
+
+        if (!curr_intermediate_values.empty())
+            spec.reducer->reduce(curr_key, curr_intermediate_values);
 
         output_file.close();
         std::cout << "mapreduce job complete" << std::endl;
     }
 
-    void emit_intermediate(const std::string& key, unsigned value) {
-        if (intermediate.find(key) != intermediate.end())
-            intermediate[key] += value;
-        else
-            intermediate[key] = value;
+    void emit_intermediate(const std::string& key, const std::string& value) {
+        intermediate.emplace_back(key, value);
     }
 
-    void emit(const std::string& key, unsigned value) {
+    void emit(const std::string& key, const std::string& value) {
         // Write the key-value pair to the output file
         output_file << key << " " << value << std::endl;
     }
