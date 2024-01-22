@@ -37,6 +37,8 @@ class WordCountReducer : public mapreduce::Reducer {
 };
 
 int main(int argc, char** argv) {
+    auto start = std::chrono::high_resolution_clock::now();
+
     mapreduce::MapReduceSpecification spec;
     spec.input_dir_name = argv[1];
     spec.output_filename = argv[2];
@@ -51,6 +53,11 @@ int main(int argc, char** argv) {
     spec.reducer = &wc_reducer;
 
     mapreduce::execute(spec);
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
+    std::cout << "elapsed time: " << ms.count() << "ms" << std::endl;
 
     return 0;
 }
