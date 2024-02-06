@@ -9,7 +9,7 @@
 #include <string>
 
 class WordCountMapper : public mapreduce::Mapper {
-    void map(mapreduce::MapReduce& mr, const std::string& input) override {
+    void map(mapreduce::MapReduceSpec& mr, const std::string& input) override {
         const auto& n = input.size();
         std::string word;
         for (size_t i = 0; i < n; ++i) {
@@ -28,7 +28,7 @@ class WordCountMapper : public mapreduce::Mapper {
 };
 
 class WordCountReducer : public mapreduce::Reducer {
-    void reduce(mapreduce::MapReduce& mr, const std::string& key, const std::vector<std::string> intermediate_values) override {
+    void reduce(mapreduce::MapReduceSpec& mr, const std::string& key, const std::vector<std::string> intermediate_values) override {
         int value = 0;
         for (const auto& intermediate_value : intermediate_values) {
             value += std::stoi(intermediate_value);
@@ -40,7 +40,7 @@ class WordCountReducer : public mapreduce::Reducer {
 int main(int argc, char** argv) {
     auto start = std::chrono::high_resolution_clock::now();
 
-    mapreduce::MapReduceSpecification spec;
+    mapreduce::MapReduceSpec spec;
     spec.input_dir_name = argv[1];
     spec.output_filename = argv[2];
     spec.num_mappers = 1;
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
     spec.mapper = &wc_mapper;
     spec.reducer = &wc_reducer;
 
-    mapreduce::execute(spec);
+    spec.execute();
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;

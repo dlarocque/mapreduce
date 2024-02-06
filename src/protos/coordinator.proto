@@ -1,22 +1,11 @@
 syntax = "proto3";
 
-package mapreduce;
+package coordinator;
 
-service MapReduce {
-  // Request to start the coordinator
-  rpc Start(StartRequest) returns (StartReply) {}
-
+service Coordinator {
   // Request to assign a task to a worker
-  rpc Assign(AssignRequest) returns (AssignResponse) {}
+  rpc Assign(AssignRequest) returns (AssignReply) {}
   
-}
-
-message StartRequest {
-  string name = 1;
-}
-
-message StartReply {
-  string message = 1;
 }
 
 message AssignRequest {
@@ -31,6 +20,6 @@ message AssignRequest {
   string output_filename = 3;
 }
 
-message AssignResponse {
+message AssignReply {
   string reply = 1;
 }
