@@ -1,5 +1,8 @@
 .idea/
+.vscode/
+.cache/
 cmake-build-debug/
+build/
 *.un~
 **/input
 **/output.txt
