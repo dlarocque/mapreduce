@@ -16,12 +16,12 @@ class CoordinatorClient {
         // Empty
     }
     
-    AssignReply Assign() {
+    AssignReply Assign(std::string worker_id) {
         AssignRequest request;
         AssignReply reply;
         ClientContext context;
         
-        request.set_worker_id("1");
+        request.set_worker_id(worker_id);
         
         Status status = stub_->Assign(&context, request, &reply);
         if (status.ok()) {
@@ -36,12 +36,17 @@ class CoordinatorClient {
     std::unique_ptr<Coordinator::Stub> stub_;
 };
   
-int main() {
-    // Start the RPC server
-    // Listen for incoming requests
-    
+int main(int argc, char** argv) {
+    // Get the worker ID from the command line
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <worker_id>" << std::endl;
+        return 1;
+    }
+
+    std::string worker_id = argv[1];
+
     CoordinatorClient client(grpc::CreateChannel("0.0.0.0:8995", grpc::InsecureChannelCredentials()));
-    AssignReply reply = client.Assign();
+    AssignReply reply = client.Assign(worker_id);
     // Check if the reply is non-empty
     if (reply.taskname() != "" && reply.input_filename() != "" && reply.output_filename() != "") {
         std::cout << "Received task: " << reply.taskname() << std::endl;
