@@ -32,7 +32,9 @@ class MapReduceServiceImpl final : public Coordinator::Service {
         std::string taskname = "map";
         std::string input_filename = "input";
         std::string output_filename = "output";
-        reply->set_reply("test");
+        reply->set_taskname(taskname);
+        reply->set_input_filename(input_filename);
+        reply->set_output_filename(output_filename);
         return Status::OK;
     }
 };
@@ -101,9 +103,9 @@ namespace mapreduce {
             std::cout << std::endl;
 
 
-            // Start the RPC server
-            std::string server_address = "0.0.0.0:8995";
-            MapReduceServiceImpl service;
+        // Start the RPC server
+        std::string server_address = "0.0.0.0:8995";
+        MapReduceServiceImpl service;
 	    ServerBuilder builder;
 	    builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
 	    builder.RegisterService(&service);

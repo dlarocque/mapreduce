@@ -9,6 +9,10 @@ service Coordinator {
 }
 
 message AssignRequest {
+  string worker_id = 1;
+}
+
+message AssignReply {
   // Task that can be assigned to the worker. This can be either map or reduce.
   string taskname = 1;
   // Name of the file with the input data. In the case of a map task, this 
@@ -18,8 +22,4 @@ message AssignRequest {
   // to be sent to the reducers.
   string input_filename = 2;
   string output_filename = 3;
-}
-
-message AssignReply {
-  string reply = 1;
 }
