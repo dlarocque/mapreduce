@@ -1,64 +1,35 @@
-//
-// Created by Daniel La Rocque on 2024-01-19.
-//
-
-#include "../include/mapreduce.hpp"
-
 #include <iostream>
-#include <vector>
 #include <string>
 
-class WordCountMapper : public mapreduce::Mapper {
-    void map(mapreduce::MapReduceSpec& mr, const std::string& input) override {
-        const auto& n = input.size();
-        std::string word;
-        for (size_t i = 0; i < n; ++i) {
-            // Skip past leading whitespace
-            while (i < n && isspace(input[i]))
-                ++i;
+extern "C" void map(const char* c_str_input, void (*emit)(const char*, const char*)) {
+    std::string input(c_str_input);
+    const size_t& n = input.size();
 
-            size_t start = i;
-            while (i < n && !isspace(input[i]))
-                i++;
+    std::string word;
+    for (size_t i = 0; i < n; ++i) {
+        // Skip past leading whitespace
+        while (i < n && isspace(input[i]))
+            ++i;
 
-            if (start < i)
-                mapreduce::emit_intermediate(mr, input.substr(start, i - start), "1");
-        }
+        // Start of the word
+        size_t start = i;
+        while (i < n && !isspace(input[i]))
+            i++;
+
+        // Emit the word
+        if (start < i)
+            emit(input.substr(start, i - start).c_str(), "1");
     }
-};
+}
 
-class WordCountReducer : public mapreduce::Reducer {
-    void reduce(mapreduce::MapReduceSpec& mr, const std::string& key, const std::vector<std::string> intermediate_values) override {
-        int value = 0;
-        for (const auto& intermediate_value : intermediate_values) {
-            value += std::stoi(intermediate_value);
-        }
-        mapreduce::emit(mr, key, std::to_string(value));
+extern "C" void reduce(const char* key, const char* const* values, int values_len, void (*emit)(const char*, const char*)) {
+    int count = 0;
+
+    // Sum all the values
+    for (int i = 0; i < values_len; ++i) {
+        count += std::stoi(values[i]);
     }
-};
-
-int main(int argc, char** argv) {
-    auto start = std::chrono::high_resolution_clock::now();
-
-    mapreduce::MapReduceSpec spec;
-    spec.input_dir_name = argv[1];
-    spec.output_filename = argv[2];
-    spec.num_mappers = 1;
-    spec.num_reducers = 1;
-    spec.max_segment_size = 16 * 1024 * 1024;
-
-    WordCountMapper wc_mapper;
-    WordCountReducer wc_reducer;
-
-    spec.mapper = &wc_mapper;
-    spec.reducer = &wc_reducer;
-
-    spec.execute();
-
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end - start;
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
-    std::cout << "elapsed time: " << ms.count() << "ms" << std::endl;
-
-    return 0;
+    
+    // Emit the sum
+    emit(key, std::to_string(count).c_str());
 }

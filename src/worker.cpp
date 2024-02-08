@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <dlfcn.h>
 #include <grpcpp/grpcpp.h>
 #include "coordinator.grpc.pb.h"
 
@@ -35,12 +36,39 @@ class CoordinatorClient {
     private:
     std::unique_ptr<Coordinator::Stub> stub_;
 };
+
+// Map and reduce functions
+typedef void (*map_func_t)(const char*, void(*)(const char*, const char*));
+typedef void (*reduce_func_t)(const char*, const char* const*, int, void(*)(const char*, const char*));
   
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <worker_id>" << std::endl;
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <worker_id> <map_reduce_functions.so>" << std::endl;
         return 1;
     }
+
+    std::string so_filename = argv[2];
+    std::cout << "Loading shared object: " << so_filename << std::endl;
+    
+    void* handle = dlopen(so_filename.c_str(), RTLD_LAZY);
+    if (!handle) {
+        std::cerr << "dlopen() failed: " << dlerror() << std::endl;
+        return 1;
+    }
+
+    map_func_t map_func = (map_func_t)dlsym(handle, "map");
+    if (!map_func) {
+        std::cerr << "dlsym() failed for map: " << dlerror() << std::endl;
+        return 1;
+    }
+
+    reduce_func_t reduce_func = (reduce_func_t)dlsym(handle, "reduce");
+    if (!reduce_func) {
+        std::cerr << "dlsym() failed for reduce: " << dlerror() << std::endl;
+        return 1;
+    }
+
+    std::cout << "Loaded map and reduce functions" << std::endl;
 
     std::string worker_id = argv[1];
 
