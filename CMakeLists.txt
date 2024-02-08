@@ -76,11 +76,19 @@ target_link_libraries(hw_grpc_proto
   ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
+  
+add_executable(coordinator src/coordinator.cpp)
+target_link_libraries(
+        coordinator
+        hw_grpc_proto
+        ${Protobuf_LIBRARIES}
+        ${_REFLECTION}
+        ${_GRPC_GRPCPP}
+        ${_PROTOBUF_LIBPROTOBUF})
 
 add_executable(worker src/worker.cpp)
 target_link_libraries(
         worker
-	#         mapreduce
         hw_grpc_proto
         ${Protobuf_LIBRARIES}
         ${_REFLECTION}
