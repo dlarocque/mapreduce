@@ -37,7 +37,6 @@ class CoordinatorClient {
 };
   
 int main(int argc, char** argv) {
-    // Get the worker ID from the command line
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <worker_id>" << std::endl;
         return 1;
@@ -47,14 +46,15 @@ int main(int argc, char** argv) {
 
     CoordinatorClient client(grpc::CreateChannel("0.0.0.0:8995", grpc::InsecureChannelCredentials()));
     AssignReply reply = client.Assign(worker_id);
-    // Check if the reply is non-empty
     if (reply.taskname() != "" && reply.input_filename() != "" && reply.output_filename() != "") {
         std::cout << "Received task: " << reply.taskname() << std::endl;
         std::cout << "Input filename: " << reply.input_filename() << std::endl;
         std::cout << "Output filename: " << reply.output_filename() << std::endl;
     } else {
-        std::cout << "RPC error" << std::endl;
+        std::cerr << "RPC error" << std::endl;
+        return 1;
     }
+    
 
     return 0;
 }

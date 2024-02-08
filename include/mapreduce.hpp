@@ -68,6 +68,9 @@ public:
             std::cout << "Assigned reduce task to worker: " << request->worker_id() << std::endl;
             std::cout << "Remaining reduce tasks: " << this->num_reducers - this->num_assigned_reducers << std::endl;
             return Status::OK;
+        } else {
+            std::cout << "No more tasks to assign to worker: " << request->worker_id() << std::endl;
+            return Status::CANCELLED;
         }
 
         return Status::OK;
