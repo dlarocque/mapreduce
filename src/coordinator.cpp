@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
     spec.output_filename = output_file;
     spec.num_mappers = num_mappers;
     spec.num_reducers = num_reducers;
+    spec.max_segment_size = 16 * 1024 * 1024;
     
     // Start the Map Reduce job
     spec.execute();

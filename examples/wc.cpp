@@ -1,7 +1,8 @@
 #include <iostream>
 #include <string>
+#include <functional>
 
-extern "C" void map(const char* c_str_input, void (*emit)(const char*, const char*)) {
+extern "C" void map(const char* c_str_input, void (*emit) (const char*, const char*)) {
     std::string input(c_str_input);
     const size_t& n = input.size();
 

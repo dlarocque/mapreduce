@@ -130,8 +130,18 @@ namespace mapreduce {
                     std::string line;
                     buffer.reserve(this->max_segment_size);
                     while (std::getline(file, line)) {
-                        // FIXME: If a single line exceeds the maximum segment size, then we should split it into multiple segments
-                        if (buffer.size() + line.size() > this->max_segment_size) {
+                        // If a single line is greater than the maximum segment size,
+                        // we cut the first 16MB of the line and emit it as a segment
+                        // repeatedly until the entire line is emitted
+                        if (line.size() > this->max_segment_size) {
+                            size_t start = 0;
+                            while (start < line.size()) {
+                                segments.push_back(line.substr(start, this->max_segment_size));
+                                start += this->max_segment_size;
+                            }
+                        } else if (buffer.size() + line.size() > this->max_segment_size) {
+                            // If the buffer is full, then we emit the segment and clear the buffer
+                            // to make space for the current line
                             segments.push_back(buffer);
                             buffer.clear();
                         }

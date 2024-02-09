@@ -1,5 +1,8 @@
 #include <iostream>
+#include <fstream>
 #include <memory>
+#include <algorithm>
+#include <unordered_map>
 #include <dlfcn.h>
 #include <grpcpp/grpcpp.h>
 #include "coordinator.grpc.pb.h"
@@ -37,9 +40,18 @@ class CoordinatorClient {
     std::unique_ptr<Coordinator::Stub> stub_;
 };
 
+// Emit function
+// I don't like this global variable, but it's the only way to pass the emit function to the map function.
+// The map_func and reduce_func can't take a std::function as an argument because they are called from dlsym, 
+// and that seems to cause segmentation faults, probably something to do with the name mangling.
+std::vector<std::pair<std::string, std::string>> intermediate;
+void emit(const char* key, const char* value) {
+    intermediate.push_back({key, value});
+}
+
 // Map and reduce functions
-typedef void (*map_func_t)(const char*, void(*)(const char*, const char*));
-typedef void (*reduce_func_t)(const char*, const char* const*, int, void(*)(const char*, const char*));
+typedef void (*map_func_t)(const char* input, void (*emit) (const char*, const char*));
+typedef void (*reduce_func_t)(const char* key, const char* const* values, int values_len, std::function<void(const char*, const char*)>);
   
 int main(int argc, char** argv) {
     if (argc != 3) {
@@ -83,6 +95,47 @@ int main(int argc, char** argv) {
         return 1;
     }
     
+    // Open the input file
+    std::ifstream input_file(reply.input_filename());
+    if (!input_file.is_open()) {
+        std::cerr << "Failed to open input file: " << reply.input_filename() << std::endl;
+        return 1;
+    }
+    
+    // Read the input file into a buffer
+    std::stringstream buffer;
+    buffer << input_file.rdbuf();
+    std::string input = buffer.str();
+    input_file.close();
+    
+    // Call the map or reduce function
+    if (reply.taskname() == "map") {
+        // Intermediate key-value store
+        map_func(input.c_str(), emit);
+        
+        // Write the intermediate key-value pairs to the output file
+        std::ofstream output_file(reply.output_filename());
+        if (!output_file.is_open()) {
+            std::cerr << "Failed to open output file: " << reply.output_filename() << std::endl;
+            return 1;
+        }
+
+        for (const auto& kv : intermediate) {
+            output_file << kv.first << "\t" << kv.second << std::endl;
+        }
+
+        output_file.close();
+    } else if (reply.taskname() == "reduce") {
+        // TODO: Sort the intermediate key-value pairs
+
+        // TODO: Aggregate values and send them to the reducer function
+        reduce_func(input.c_str(), nullptr, 0, [](const char* key, const char* value) {
+                // Write the final key-value pair to the output file
+        });
+    } else {
+        std::cerr << "Unknown task: " << reply.taskname() << std::endl;
+        return 1;
+    }
 
     return 0;
 }
