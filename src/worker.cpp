@@ -13,6 +13,8 @@ using grpc::Status;
 using coordinator::Coordinator;
 using coordinator::AssignRequest;
 using coordinator::AssignReply;
+using coordinator::CompleteRequest;
+using coordinator::CompleteReply;
 
 class CoordinatorClient {
     public:
@@ -35,6 +37,25 @@ class CoordinatorClient {
             return {}; // FIXME: Should we throw an exception here?
         }
     }
+    
+    CompleteReply Complete(std::string worker_id, std::string taskname, std::string output_filename) {
+        CompleteRequest request;
+        CompleteReply reply;
+        ClientContext context;
+        
+        request.set_worker_id(worker_id);
+        request.set_taskname(taskname);
+        request.set_output_filename(output_filename);
+        
+        Status status = stub_->Complete(&context, request, &reply);
+        if (status.ok()) {
+            return reply;
+        } else {
+            std::cout << status.error_code() << ": " << status.error_message() << std::endl;
+            return {}; // FIXME: Should we throw an exception here?
+        }
+    }
+    
     
     private:
     std::unique_ptr<Coordinator::Stub> stub_;
@@ -86,30 +107,27 @@ int main(int argc, char** argv) {
 
     CoordinatorClient client(grpc::CreateChannel("0.0.0.0:8995", grpc::InsecureChannelCredentials()));
     AssignReply reply = client.Assign(worker_id);
-    if (reply.taskname() != "" && reply.input_filename() != "" && reply.output_filename() != "") {
-        std::cout << "Received task: " << reply.taskname() << std::endl;
-        std::cout << "Input filename: " << reply.input_filename() << std::endl;
-        std::cout << "Output filename: " << reply.output_filename() << std::endl;
-    } else {
-        std::cerr << "RPC error" << std::endl;
-        return 1;
-    }
     
-    // Open the input file
-    std::ifstream input_file(reply.input_filename());
-    if (!input_file.is_open()) {
-        std::cerr << "Failed to open input file: " << reply.input_filename() << std::endl;
-        return 1;
+    // TODO: Check if the reply is empty
+    std::string input;
+    for (const auto& filename : reply.input_filename()) {
+        std::stringstream buffer;
+        std::ifstream input_file(filename);
+        if (!input_file.is_open()) {
+            std::cerr << "Failed to open input file: " << filename << std::endl;
+            return 1;
+        }
+        buffer << input_file.rdbuf();
+        input.append(buffer.str());
+        input_file.close();
     }
-    
-    // Read the input file into a buffer
-    std::stringstream buffer;
-    buffer << input_file.rdbuf();
-    std::string input = buffer.str();
-    input_file.close();
     
     // Call the map or reduce function
-    if (reply.taskname() == "map") {
+    std::string taskname = reply.taskname();
+    if (taskname == "map") {
+        // Sort the input by key
+        // 
+
         // Intermediate key-value store
         map_func(input.c_str(), emit);
         
@@ -123,11 +141,15 @@ int main(int argc, char** argv) {
         for (const auto& kv : intermediate) {
             output_file << kv.first << "\t" << kv.second << std::endl;
         }
+        
+        std::cout << "Wrote " << intermediate.size() << " key-value pairs to " << reply.output_filename() << std::endl;
 
         output_file.close();
-    } else if (reply.taskname() == "reduce") {
+        
+        // Send the intermediate file name to the coordinator to notify them that we're done
+        // TODO: Implement Complete RPC
+    } else if (taskname == "reduce") {
         // TODO: Sort the intermediate key-value pairs
-
         // TODO: Aggregate values and send them to the reducer function
         reduce_func(input.c_str(), nullptr, 0, [](const char* key, const char* value) {
                 // Write the final key-value pair to the output file
@@ -136,6 +158,11 @@ int main(int argc, char** argv) {
         std::cerr << "Unknown task: " << reply.taskname() << std::endl;
         return 1;
     }
-
+    
+    // Send Complete RPC to the coordinator
+    std::cout << "Sending Complete RPC to the coordinator" << std::endl;
+    CompleteReply complete_reply = client.Complete(worker_id, reply.taskname(), reply.output_filename());
+    
+    std::cout << "Complete RPC returned " << std::endl;
     return 0;
 }

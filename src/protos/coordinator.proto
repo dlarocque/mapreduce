@@ -5,7 +5,8 @@ package coordinator;
 service Coordinator {
   // Request to assign a task to a worker
   rpc Assign(AssignRequest) returns (AssignReply) {}
-  
+  // Request to notify the coordinator that a task is complete
+  rpc Complete(CompleteRequest) returns (CompleteReply) {}
 }
 
 message AssignRequest {
@@ -20,6 +21,20 @@ message AssignReply {
   // the file containing the intermediate key-value pairs. 
   // TODO: We should allow multiple input files containing intermediate kvps
   // to be sent to the reducers.
-  string input_filename = 2;
+  repeated string input_filename = 2;
   string output_filename = 3;
+}
+
+message CompleteRequest {
+  string worker_id = 1;
+  // Task that was completed by the worker.
+  string taskname = 2;
+  // Filename where the results of the job are stored.
+  string output_filename = 3;
+}
+
+message CompleteReply {
+  // If true, there are more tasks that are available to be assigned, 
+  // so the worker should request for another task.
+  string done = 1;
 }

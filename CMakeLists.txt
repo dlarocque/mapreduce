@@ -61,14 +61,6 @@ add_custom_command(
 include_directories(${CMAKE_BINARY_DIR})
 include_directories(${PROTOBUF_INCLUDE_DIRS})
 
-# add_library(mapreduce STATIC include/mapreduce.cpp
-#         src/worker.cpp
-#         src/worker.h
-#         src/coordinator.cpp
-#         src/coordinator.h
-#         ${GENERATED_PROTOBUF_FILES})
-# target_include_directories(mapreduce PUBLIC include ${Protobuf_INCLUDE_DIRS})
-
 add_library(hw_grpc_proto
         ${GENERATED_PROTOBUF_FILES}
         )
