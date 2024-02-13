@@ -78,7 +78,6 @@ struct JobState {
 
 class MapReduceServiceImpl final : public Coordinator::Service {
 public: 
-    // FIXME: It would be nice to have a single struct parameter rather than all of these vars.
     explicit MapReduceServiceImpl(JobState state) : state(state) { }
     
     Status Assign(ServerContext* context, const AssignRequest* request, AssignReply* reply) override {
@@ -126,7 +125,9 @@ public:
             for (auto& task: this->state.reduce_tasks) {
                 if (task.state == TaskState::IDLE) {
                     reply->set_taskname("reduce");
-                    reply->add_input_filename(task.input_filenames[0]);
+                    for (const auto& input_filename : task.input_filenames) {
+                        reply->add_input_filename(input_filename);
+                    }
                     reply->set_output_filename(task.output_filename);
 
                     task.state = TaskState::IN_PROGRESS;
@@ -248,33 +249,40 @@ namespace mapreduce {
             
             // Initialize map tasks
             std::cout << "Initializing map tasks" << std::endl;
+            std::vector<std::string> segment_filenames;
             for (size_t i = 0; i < segments.size(); i++) {
                 MapTask map_task;
                 map_task.state = TaskState::IDLE;
                 map_task.input_filename = "segments/segment_" + std::to_string(i);
                 map_task.output_filename = "mr-int-" + std::to_string(i);
                 state.map_tasks.push_back(map_task);
+                segment_filenames.push_back(map_task.output_filename);
                 printMapTask(map_task);
             }
             
-            // Divide the segments among the reducers, and create reduce tasks
-            size_t remaining_segments = segments.size();
-            size_t segment_start = 0;
-            for(size_t i = 0; i < this->num_reducers; i++) {
-                // Naively assign the numbered segment filenames to reducers
-                std::vector<std::string> segment_filenames;
-                size_t num_segments = std::min(remaining_segments, segments.size() / this->num_reducers);
-                for (size_t j = 0; j < num_segments; j++) {
-                    segment_filenames.push_back("mr-int-" + std::to_string(segment_start + j));
-                    segment_start += num_segments;
+            size_t segments_per_reducer = segments.size() / this->num_reducers;
+            size_t j = 0;
+            for (size_t i = 0; i < this->num_mappers; i++) {
+                std::vector<std::string> input_filenames;
+                while (j < segments.size() && j < segments_per_reducer) {
+                    input_filenames.push_back(segment_filenames[j]);
+                    j++;
                 }
+                
+                // Print all the input filenames for the reduce tasks
+                std::cout << "input_filenames for reduce task " << i << ": ";
+                for (const auto& filename : input_filenames) {
+                    std::cout << filename << " ";
+                }
+                std::cout << std::endl;
 
-                const auto output_filename = "mr-out-" + std::to_string(i);
-                // FIXME: I think it would be better to have less implicit initialization of the ReduceTask
-                // since there's some inheritance going on
-                state.reduce_tasks.push_back(ReduceTask{TaskState::IDLE, "", output_filename, segment_filenames});
+                ReduceTask reduce_task;
+                reduce_task.state = TaskState::IDLE;
+                reduce_task.input_filenames = input_filenames;
+                reduce_task.output_filename = "mr-out-" + std::to_string(i);
+                state.reduce_tasks.push_back(reduce_task);
             }
-
+            
             // Start the RPC server
             std::string server_address = "0.0.0.0:8995"; // FIXME: Don't make this hard-coded
             MapReduceServiceImpl service(state);
