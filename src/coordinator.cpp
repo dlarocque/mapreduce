@@ -1,4 +1,5 @@
 #include "../include/mapreduce.hpp"
+#include <chrono>
 
 int main(int argc, char** argv) {
     if (argc != 5) {
@@ -20,8 +21,14 @@ int main(int argc, char** argv) {
     spec.num_reducers = num_reducers;
     spec.max_segment_size = max_segment_size;
     
+    auto start = std::chrono::high_resolution_clock::now();
+
     // Start the Map Reduce job
     spec.execute();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "MapReduce job completed in " << elapsed.count() << " seconds" << std::endl;
 
     return 0;
 }
