@@ -13,6 +13,8 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <thread>
 #include <unordered_map>
 #include <filesystem>
 #include <algorithm>
@@ -71,6 +73,7 @@ struct JobState {
     size_t num_idle_reduce_tasks;
     size_t num_completed_map_tasks = 0;
     size_t num_completed_reduce_tasks = 0;
+    bool finished = false;
 
     std::vector<MapTask> map_tasks;
     std::vector<ReduceTask> reduce_tasks;
@@ -78,30 +81,30 @@ struct JobState {
 
 class MapReduceServiceImpl final : public Coordinator::Service {
 public: 
-    explicit MapReduceServiceImpl(JobState state) : state(state) { }
+    explicit MapReduceServiceImpl(std::shared_ptr<JobState> state) : state(std::move(state)) { }
     
     Status Assign(ServerContext* context, const AssignRequest* request, AssignReply* reply) override {
         // TODO: Add more error handling and validation
         std::cout << "Received AssignRequest from worker: " << request->worker_id() << std::endl;
-        std::cout << "Number of idle map tasks: " << this->state.num_idle_map_tasks << std::endl;
-        std::cout << "Number of idle reduce tasks: " << this->state.num_idle_reduce_tasks << std::endl;
-        std::cout << "Number of completed map tasks: " << this->state.num_completed_map_tasks << std::endl;
-        std::cout << "Number of completed reduce tasks: " << this->state.num_completed_reduce_tasks << std::endl;
+        std::cout << "Number of idle map tasks: " << this->state->num_idle_map_tasks << std::endl;
+        std::cout << "Number of idle reduce tasks: " << this->state->num_idle_reduce_tasks << std::endl;
+        std::cout << "Number of completed map tasks: " << this->state->num_completed_map_tasks << std::endl;
+        std::cout << "Number of completed reduce tasks: " << this->state->num_completed_reduce_tasks << std::endl;
 
         if (request->worker_id().empty()) {
             std::cerr << "error: worker ID is empty" << std::endl;
             return Status::CANCELLED;
         }
         
-        const bool map_phase = this->state.num_completed_map_tasks < this->state.map_tasks.size();
+        const bool map_phase = this->state->num_completed_map_tasks < this->state->map_tasks.size();
 
         // Since a worker is sending an Assign RPC, we can assume that it is idle.
         // In this simple implementation, we only assign reduce tasks once all of the reduce
         // tasks have completed.
-        if (map_phase && this->state.num_idle_map_tasks > 0) {
+        if (map_phase && this->state->num_idle_map_tasks > 0) {
             // Search for an idle map task
             std::cout << "TASKS:" << std::endl;
-            for (auto& task : this->state.map_tasks) {
+            for (auto& task : this->state->map_tasks) {
                 printMapTask(task);
                 if (task.state == TaskState::IDLE) {
                     reply->set_taskname("map");
@@ -110,7 +113,7 @@ public:
 
                     task.state = TaskState::IN_PROGRESS;
                     task.worker_id = request->worker_id();
-                    this->state.num_idle_map_tasks--;
+                    this->state->num_idle_map_tasks--;
                     
                     std::cout << "Assigned map task to worker: " << request->worker_id() << std::endl;
                     printMapTask(task);
@@ -119,10 +122,10 @@ public:
             }
 
 
-        } else if (!map_phase && this->state.num_idle_reduce_tasks > 0) {
+        } else if (!map_phase && this->state->num_idle_reduce_tasks > 0) {
             // Search for an idle reduce task to assign
             ReduceTask idle_reduce_task;
-            for (auto& task: this->state.reduce_tasks) {
+            for (auto& task: this->state->reduce_tasks) {
                 if (task.state == TaskState::IDLE) {
                     reply->set_taskname("reduce");
                     for (const auto& input_filename : task.input_filenames) {
@@ -132,7 +135,7 @@ public:
 
                     task.state = TaskState::IN_PROGRESS;
                     task.worker_id = request->worker_id();
-                    this->state.num_idle_reduce_tasks--;
+                    this->state->num_idle_reduce_tasks--;
 
                     std::cout << "Assigned reduce task to worker: " << request->worker_id() << std::endl;
                     return Status::OK;
@@ -160,24 +163,36 @@ public:
         
         if (request->taskname() == "map") {
             // Update the reduce task to be complete
-            for (auto& task : this->state.map_tasks) {
+            for (auto& task : this->state->map_tasks) {
                 if (task.worker_id == request->worker_id()) {
                     task.state = TaskState::COMPLETE;
-                    this->state.num_completed_map_tasks++;
+                    this->state->num_completed_map_tasks++;
                     std::cout << "Map task completed by worker: " << request->worker_id() << std::endl;
                     return Status::OK;
                 }
             }
         } else if (request->taskname() == "reduce") {
             // Update the reduce task to be complete
-            for (auto& task : this->state.reduce_tasks) {
+            for (auto& task : this->state->reduce_tasks) {
                 if (task.worker_id == request->worker_id()) {
                     task.state = TaskState::COMPLETE;
-                    this->state.num_completed_reduce_tasks++;
+                    this->state->num_completed_reduce_tasks++;
                     std::cout << "Reduce task completed by worker: " << request->worker_id() << std::endl;
-                    return Status::OK;
                 }
             }
+
+            std::cout << "Number of completed reduce tasks: " << this->state->num_completed_reduce_tasks << std::endl;
+            std::cout << "Number of reduce tasks: " << this->state->reduce_tasks.size() << std::endl;
+
+            if (this->state->num_completed_reduce_tasks == this->state->reduce_tasks.size()) {
+                std::cout << "All reduce tasks have completed" << std::endl;
+                std::cout << "MapReduce job has completed" << std::endl;
+
+                this->state->finished = true;
+
+            }
+            
+            return Status::OK;
         } else {
             std::cerr << "error: unknown task name" << std::endl;
             return Status::CANCELLED;
@@ -187,7 +202,7 @@ public:
     }
 
     private:
-    JobState state;
+    std::shared_ptr<JobState> state;
 };
 
 namespace mapreduce {
@@ -239,13 +254,14 @@ namespace mapreduce {
             }
 
             // Initializate job state
-            JobState state;
-            state.num_mappers = this->num_mappers;
-            state.num_reducers = this->num_reducers;
-            state.segment_size = this->max_segment_size;
-            state.num_segments = segments.size();
-            state.num_idle_map_tasks = this->num_mappers;
-            state.num_idle_reduce_tasks = this->num_reducers;
+            std::shared_ptr<JobState> state = std::make_shared<JobState>();
+            state->num_mappers = this->num_mappers;
+            state->num_reducers = this->num_reducers;
+            state->segment_size = this->max_segment_size;
+            state->num_segments = segments.size();
+            state->num_idle_map_tasks = this->num_mappers;
+            state->num_idle_reduce_tasks = this->num_reducers;
+            state->finished = false;
             
             // Initialize map tasks
             std::cout << "Initializing map tasks" << std::endl;
@@ -255,14 +271,14 @@ namespace mapreduce {
                 map_task.state = TaskState::IDLE;
                 map_task.input_filename = "segments/segment_" + std::to_string(i);
                 map_task.output_filename = "mr-int-" + std::to_string(i);
-                state.map_tasks.push_back(map_task);
+                state->map_tasks.push_back(map_task);
                 segment_filenames.push_back(map_task.output_filename);
                 printMapTask(map_task);
             }
             
             size_t segments_per_reducer = segments.size() / this->num_reducers;
             size_t j = 0;
-            for (size_t i = 0; i < this->num_mappers; i++) {
+            for (size_t i = 0; i < this->num_reducers; i++) {
                 std::vector<std::string> input_filenames;
                 while (j < segments.size() && j < segments_per_reducer) {
                     input_filenames.push_back(segment_filenames[j]);
@@ -280,7 +296,7 @@ namespace mapreduce {
                 reduce_task.state = TaskState::IDLE;
                 reduce_task.input_filenames = input_filenames;
                 reduce_task.output_filename = "mr-out-" + std::to_string(i);
-                state.reduce_tasks.push_back(reduce_task);
+                state->reduce_tasks.push_back(reduce_task);
             }
             
             // Start the RPC server
@@ -293,9 +309,23 @@ namespace mapreduce {
             std::unique_ptr<Server> server(builder.BuildAndStart());
             std::cout << "Server listening on " << server_address << std::endl;
 
+            // Create a seperate thread to monitor the job completion status
+            std::thread job_monitor_thread([state, &server] {
+                while (true) {
+                    if (state->finished) {
+                        server->Shutdown();
+                        std::cout << "Server shutdown" << std::endl;
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                }
+            });
+
             server->Wait();
+            job_monitor_thread.join();
 
             // Clean up the temporary directory
+            std::cout << "Cleaning up temporary directory" << std::endl;
             std::filesystem::remove_all(segments_dir);
         }
         
