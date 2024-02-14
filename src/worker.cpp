@@ -2,6 +2,8 @@
 #include <fstream>
 #include <memory>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 #include <unordered_map>
 #include <dlfcn.h>
 #include <grpcpp/grpcpp.h>
@@ -29,12 +31,21 @@ class CoordinatorClient {
         
         request.set_worker_id(worker_id);
         
-        Status status = stub_->Assign(&context, request, &reply);
-        if (status.ok()) {
-            return reply;
-        } else {
-            std::cout << status.error_code() << ": " << status.error_message() << std::endl;
-            return {}; // FIXME: Should we throw an exception here?
+        int retries = 0;
+        const int max_retries = 15;
+        while (true) {
+            Status status = stub_->Assign(&context, request, &reply);
+            if (status.ok()) {
+                return reply;
+            } else {
+                std::cout << status.error_code() << ": " << status.error_message() << std::endl;
+                retries++;
+                if (retries >= max_retries) {
+                    std::cerr << "Max retries exceeded" << std::endl;
+                    throw std::runtime_error("Max retries exceeded");
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            }
         }
     }
     
@@ -111,103 +122,111 @@ int main(int argc, char** argv) {
     std::string worker_id = argv[1];
 
     CoordinatorClient client(grpc::CreateChannel("0.0.0.0:8995", grpc::InsecureChannelCredentials()));
-    AssignReply reply = client.Assign(worker_id);
-    
-    // TODO: Check if the reply is empty
-    std::string input;
-    for (const auto& filename : reply.input_filename()) {
-        std::stringstream buffer;
-        std::ifstream input_file(filename);
-        if (!input_file.is_open()) {
-            std::cerr << "Failed to open input file: " << filename << std::endl;
-            return 1;
-        }
-        buffer << input_file.rdbuf();
-        input.append(buffer.str());
-        input_file.close();
-    }
-    
-    // Call the map or reduce function
-    std::string taskname = reply.taskname();
-    if (taskname == "map") {
-        // Sort the input by key
-        // 
 
-        // Intermediate key-value store
-        map_func(input.c_str(), emit_intermediate);
+    // Infinite loop to keep the worker running
+    for (;;) {
+        std::cout << "Sending Assign RPC to the coordinator" << std::endl;
+        AssignReply reply = client.Assign(worker_id);
         
-        // Write the intermediate key-value pairs to the output file
-        std::ofstream output_file(reply.output_filename());
-        if (!output_file.is_open()) {
-            std::cerr << "Failed to open output file: " << reply.output_filename() << std::endl;
-            return 1;
-        }
-
-        for (const auto& kv : intermediate) {
-            output_file << kv.first << "\t" << kv.second << std::endl;
-        }
-        
-        std::cout << "Wrote " << intermediate.size() << " key-value pairs to " << reply.output_filename() << std::endl;
-
-        output_file.close();
-        
-        // Send the intermediate file name to the coordinator to notify them that we're done
-        // TODO: Implement Complete RPC
-    } else if (taskname == "reduce") {
-        // Convert the input string to a vector of key-value pairs
-        size_t start = 0; 
-        while (start < input.size()) {
-            size_t end = input.find('\n', start);
-            if (end == std::string::npos) {
-                end = input.size();
+        // TODO: Check if the reply is empty
+        std::string input;
+        for (const auto& filename : reply.input_filename()) {
+            std::stringstream buffer;
+            std::ifstream input_file(filename);
+            if (!input_file.is_open()) {
+                std::cerr << "Failed to open input file: " << filename << std::endl;
+                return 1;
             }
-            std::string line = input.substr(start, end - start);
-            size_t tab = line.find('\t');
-            std::string key = line.substr(0, tab);
-            std::string value = line.substr(tab + 1);
-            intermediate.push_back({key, value});
-            start = end + 1;
+            buffer << input_file.rdbuf();
+            input.append(buffer.str());
+            input_file.close();
         }
-
-        // Sort the intermediate key-value pairs
-        std::sort(intermediate.begin(), intermediate.end()); 
         
-        
-        // Aggregate values and send them to the reducer function
-        std::string current_key = intermediate[0].first;
-        std::vector<const char*> values; // Must be a vector of const char* because that's what the reduce function expects
-        for (const auto& kv : intermediate) {
-            if (kv.first != current_key) {
-                const char* const* values_data = values.data(); // Implicit conversion from vector<const char*> to const char* const*
-                reduce_func(current_key.c_str(), values_data, values.size(), emit_final);
-                current_key = kv.first;
-                values.clear();
+        // Call the map or reduce function
+        std::string taskname = reply.taskname();
+        if (taskname == "map") {
+            // Sort the input by key
+            // Intermediate key-value store
+            map_func(input.c_str(), emit_intermediate);
+            
+            // Write the intermediate key-value pairs to the output file
+            std::ofstream output_file(reply.output_filename());
+            if (!output_file.is_open()) {
+                std::cerr << "Failed to open output file: " << reply.output_filename() << std::endl;
+                return 1;
             }
-            values.push_back(kv.second.c_str());
-        }
-        
-        // Write the final key-value pairs to the output file
-        std::ofstream output_file(reply.output_filename());
-        if (!output_file.is_open()) {
-            std::cerr << "Failed to open output file: " << reply.output_filename() << std::endl;
+
+            for (const auto& kv : intermediate) {
+                output_file << kv.first << "\t" << kv.second << std::endl;
+            }
+            
+            std::cout << "Wrote " << intermediate.size() << " key-value pairs to " << reply.output_filename() << std::endl;
+
+            output_file.close();
+            
+            // Send the intermediate file name to the coordinator to notify them that we're done
+            // TODO: Implement Complete RPC
+        } else if (taskname == "reduce") {
+            // Convert the input string to a vector of key-value pairs
+            size_t start = 0; 
+            while (start < input.size()) {
+                size_t end = input.find('\n', start);
+                if (end == std::string::npos) {
+                    end = input.size();
+                }
+                std::string line = input.substr(start, end - start);
+                size_t tab = line.find('\t');
+                std::string key = line.substr(0, tab);
+                std::string value = line.substr(tab + 1);
+                intermediate.push_back({key, value});
+                start = end + 1;
+            }
+
+            // Sort the intermediate key-value pairs
+            std::sort(intermediate.begin(), intermediate.end()); 
+            
+            
+            // Aggregate values and send them to the reducer function
+            std::string current_key = intermediate[0].first;
+            std::vector<const char*> values; // Must be a vector of const char* because that's what the reduce function expects
+            for (const auto& kv : intermediate) {
+                if (kv.first != current_key) {
+                    const char* const* values_data = values.data(); // Implicit conversion from vector<const char*> to const char* const*
+                    reduce_func(current_key.c_str(), values_data, values.size(), emit_final);
+                    current_key = kv.first;
+                    values.clear();
+                }
+                values.push_back(kv.second.c_str());
+            }
+            
+            // Write the final key-value pairs to the output file
+            std::ofstream output_file(reply.output_filename());
+            if (!output_file.is_open()) {
+                std::cerr << "Failed to open output file: " << reply.output_filename() << std::endl;
+                return 1;
+            }
+
+            std::cout << "Writing final key-value pairs to " << reply.output_filename() << std::endl;
+            for (const auto& kv : intermediate_final) {
+                output_file << kv.first << "\t" << kv.second << std::endl;
+            }
+
+            output_file.close();
+        } else {
+            std::cerr << "Unknown task: " << reply.taskname() << std::endl;
             return 1;
         }
+        
+        // Send Complete RPC to the coordinator
+        std::cout << "Sending Complete RPC to the coordinator" << std::endl;
+        CompleteReply complete_reply = client.Complete(worker_id, reply.taskname(), reply.output_filename());
+        
+        std::cout << "Complete RPC returned " << std::endl;
 
-        std::cout << "Writing final key-value pairs to " << reply.output_filename() << std::endl;
-        for (const auto& kv : intermediate_final) {
-            output_file << kv.first << "\t" << kv.second << std::endl;
-        }
-
-        output_file.close();
-    } else {
-        std::cerr << "Unknown task: " << reply.taskname() << std::endl;
-        return 1;
+        // Reset the intermediate key-value store
+        intermediate.clear();
+        intermediate_final.clear();
     }
-    
-    // Send Complete RPC to the coordinator
-    std::cout << "Sending Complete RPC to the coordinator" << std::endl;
-    CompleteReply complete_reply = client.Complete(worker_id, reply.taskname(), reply.output_filename());
-    
-    std::cout << "Complete RPC returned " << std::endl;
+
     return 0;
 }
