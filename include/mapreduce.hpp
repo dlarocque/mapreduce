@@ -276,11 +276,12 @@ namespace mapreduce {
                 printMapTask(map_task);
             }
             
-            size_t segments_per_reducer = segments.size() / this->num_reducers;
+            size_t segments_per_reducer = (segments.size() + 1) / this->num_reducers;
+            std::cout << "segments_per_reducer: " << segments_per_reducer << std::endl;
             size_t j = 0;
             for (size_t i = 0; i < this->num_reducers; i++) {
                 std::vector<std::string> input_filenames;
-                while (j < segments.size() && j < segments_per_reducer) {
+                while (j < segments.size() && input_filenames.size() < segments_per_reducer) {
                     input_filenames.push_back(segment_filenames[j]);
                     j++;
                 }
