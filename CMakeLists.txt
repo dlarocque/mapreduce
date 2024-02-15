@@ -82,6 +82,7 @@ add_executable(worker src/worker.cpp)
 target_link_libraries(
         worker
         hw_grpc_proto
+        -lprofiler
         ${Protobuf_LIBRARIES}
         ${_REFLECTION}
         ${_GRPC_GRPCPP}
