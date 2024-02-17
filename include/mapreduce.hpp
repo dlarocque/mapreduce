@@ -71,6 +71,8 @@ struct JobState {
     size_t num_segments;
     size_t num_idle_map_tasks;
     size_t num_idle_reduce_tasks;
+    size_t num_in_progress_map_tasks = 0;
+    size_t num_in_progress_reduce_tasks = 0;
     size_t num_completed_map_tasks = 0;
     size_t num_completed_reduce_tasks = 0;
     bool finished = false;
@@ -88,6 +90,8 @@ public:
         std::cout << "Received AssignRequest from worker: " << request->worker_id() << std::endl;
         std::cout << "Number of idle map tasks: " << this->state->num_idle_map_tasks << std::endl;
         std::cout << "Number of idle reduce tasks: " << this->state->num_idle_reduce_tasks << std::endl;
+        std::cout << "Number of in progress map tasks: " << this->state->num_in_progress_map_tasks << std::endl;
+        std::cout << "Number of in progress reduce tasks: " << this->state->num_in_progress_reduce_tasks << std::endl;
         std::cout << "Number of completed map tasks: " << this->state->num_completed_map_tasks << std::endl;
         std::cout << "Number of completed reduce tasks: " << this->state->num_completed_reduce_tasks << std::endl;
 
@@ -114,6 +118,7 @@ public:
                     task.state = TaskState::IN_PROGRESS;
                     task.worker_id = request->worker_id();
                     this->state->num_idle_map_tasks--;
+                    this->state->num_in_progress_map_tasks++;
                     
                     std::cout << "Assigned map task to worker: " << request->worker_id() << std::endl;
                     printMapTask(task);
@@ -167,6 +172,7 @@ public:
                 if (task.worker_id == request->worker_id()) {
                     task.state = TaskState::COMPLETE;
                     this->state->num_completed_map_tasks++;
+                    this->state->num_in_progress_map_tasks--;
                     std::cout << "Map task completed by worker: " << request->worker_id() << std::endl;
                     return Status::OK;
                 }
@@ -177,6 +183,7 @@ public:
                 if (task.worker_id == request->worker_id()) {
                     task.state = TaskState::COMPLETE;
                     this->state->num_completed_reduce_tasks++;
+                    this->state->num_in_progress_reduce_tasks--;
                     std::cout << "Reduce task completed by worker: " << request->worker_id() << std::endl;
                 }
             }
@@ -259,7 +266,7 @@ namespace mapreduce {
             state->num_reducers = this->num_reducers;
             state->segment_size = this->max_segment_size;
             state->num_segments = segments.size();
-            state->num_idle_map_tasks = this->num_mappers;
+            state->num_idle_map_tasks = segments.size(); // Should we let the user set this?
             state->num_idle_reduce_tasks = this->num_reducers;
             state->finished = false;
             
