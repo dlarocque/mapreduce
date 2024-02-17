@@ -25,20 +25,21 @@ class CoordinatorClient {
     }
     
     AssignReply Assign(std::string worker_id) {
-        AssignRequest request;
-        AssignReply reply;
-        ClientContext context;
-        
-        request.set_worker_id(worker_id);
-        
-        int retries = 0;
+        int retries = 1;
         const int max_retries = 15;
         while (true) {
+            AssignRequest request;
+            AssignReply reply;
+            ClientContext context;
+            
+            request.set_worker_id(worker_id);
+
+            std::cout << "Sending Assign RPC to the coordinator" << std::endl;
             Status status = stub_->Assign(&context, request, &reply);
             if (status.ok()) {
                 return reply;
             } else {
-                std::cout << status.error_code() << ": " << status.error_message() << std::endl;
+                std::cout << "Assign RPC failed: " << status.error_code() << ": " << status.error_message() << std::endl;
                 retries++;
                 if (retries >= max_retries) {
                     std::cerr << "Max retries exceeded" << std::endl;
@@ -125,7 +126,6 @@ int main(int argc, char** argv) {
 
     // Infinite loop to keep the worker running
     for (;;) {
-        std::cout << "Sending Assign RPC to the coordinator" << std::endl;
         AssignReply reply = client.Assign(worker_id);
         
         // TODO: Check if the reply is empty
@@ -184,7 +184,6 @@ int main(int argc, char** argv) {
 
             // Sort the intermediate key-value pairs
             std::sort(intermediate.begin(), intermediate.end()); 
-            
             
             // Aggregate values and send them to the reducer function
             std::string current_key = intermediate[0].first;
