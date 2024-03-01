@@ -165,7 +165,6 @@ int main(int argc, char** argv) {
             output_file.close();
             
             // Send the intermediate file name to the coordinator to notify them that we're done
-            // TODO: Implement Complete RPC
         } else if (taskname == "reduce") {
             // Convert the input string to a vector of key-value pairs
             size_t start = 0; 

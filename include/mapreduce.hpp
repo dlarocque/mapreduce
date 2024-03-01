@@ -227,6 +227,7 @@ namespace mapreduce {
         size_t max_segment_size;
         size_t num_assigned_mappers = 0;
         size_t num_assigned_reducers = 0;
+        std::string server_address;
         
         std::vector<Task> tasks;
 
@@ -235,6 +236,7 @@ namespace mapreduce {
 
         void execute() {
             std::cout << "executing mapreduce job" << std::endl;
+            std::cout << "server address: " << this->server_address << std::endl;
             std::cout << "input directory: " << this->input_dir_name << std::endl;
             std::cout << "output filename: " << this->output_filename << std::endl;
             std::cout << "number of mappers: " << this->num_mappers << std::endl;
@@ -308,7 +310,8 @@ namespace mapreduce {
             }
             
             // Start the RPC server
-            std::string server_address = "0.0.0.0:8995"; // FIXME: Don't make this hard-coded
+            std::string server_address = this->server_address;
+            // std::string server_address = "0.0.0.0:8995"; // FIXME: Don't make this hard-coded
             MapReduceServiceImpl service(state);
             ServerBuilder builder;
             builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());

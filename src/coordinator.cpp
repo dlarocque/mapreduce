@@ -3,14 +3,15 @@
 
 int main(int argc, char** argv) {
     if (argc != 5) {
-        std::cerr << "Usage: " << argv[0] << " <input_dir> <output_file> <num_mappers> <num_reducers>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input_dir> <output_file> <server_address> <num_mappers> <num_reducers>" << std::endl;
         return 1;
     }
     
     std::string input_dir = argv[1];
     std::string output_file = argv[2];
-    int num_mappers = std::stoi(argv[3]);
-    int num_reducers = std::stoi(argv[4]);
+    std::string server_address = argv[3];
+    int num_mappers = std::stoi(argv[4]);
+    int num_reducers = std::stoi(argv[5]);
     int max_segment_size = 16 * 1024 * 1024;
 
     // Create the Map Reduce specification
